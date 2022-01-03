@@ -7,6 +7,7 @@ from os.path import isfile, join
 import re
 import exifread
 from fractions import Fraction
+import math
 
 def clamp(x, l, h):
     return max(l, min(h, x))
@@ -14,39 +15,63 @@ def clamp(x, l, h):
 def map(x, in_min, in_max, out_min, out_max):
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
-def thing(p, clip, feather_stops):
-    return clamp(map(p, clip/(2^feather_stops), clip, 1, 0), 0, 1)
+def oiio_map(x, in_min, in_max, out_min, out_max):
+    return add(div(mul(sub(x, in_min), out_max - out_min), in_max - in_min), out_min)
+
+def oiio_lerp(x, out_min, out_max):
+    return add(mul(x, sub(out_max, out_min)), out_min)
+
+def thing(base, clip, feather_stops):
+    return oiio_clamp(oiio_map(base, clip/(2^feather_stops), clip, 1, 0), 0, 1)
+
+def add(a, b):
+    return oiio.ImageBufAlgo.add(a, b)
+
+def sub(a, b):
+    return oiio.ImageBufAlgo.sub(a, b)
+
+def mul(a, b):
+    return oiio.ImageBufAlgo.mul(a, b)
+
+def div(a, b):
+    return oiio.ImageBufAlgo.div(a, b)
+
+def oiio_clamp(x, a, b):
+    return oiio.ImageBufAlgo.clamp(x, a, b)
 
 inpath = '.'
 clip = 0.8
 feather_stops = 1
 
-composite = oiio.ImageBufAlgo.zero(oiio.ROI(0,512,0,512,0,1,0,3))
+files = [f for f in sorted(listdir(inpath)) if isfile(join(inpath, f)) and re.search('\.exr$', f)]
+composite = oiio.ImageBuf(files[0])
+oiio.ImageBufAlgo.zero(composite)
 
-for file in [f for f in listdir(inpath) if isfile(join(inpath, f)) and re.search('\.tiff$', f)]:
-    img_input = oiio.ImageInput.open(file)
-    image = img_input.read_image(format="float")
+exp = 1
+exps = []
 
-    img_exif = open(file, 'rb')
-    tags = exifread.process_file(img_exif)
-    time = float(Fraction(str(tags['EXIF ExposureTime'])))
-    iris = float(Fraction(str(tags['EXIF FNumber'])))
-    iso = int(str(tags['EXIF ISOSpeedRatings']))
-    exp = iris**2/(time*iso)
+for file in files:
+#   img_exif = open(file, 'rb')
+#   tags = exifread.process_file(img_exif)
+#   time = float(Fraction(str(tags['EXIF ExposureTime'])))
+#   iris = float(Fraction(str(tags['EXIF FNumber'])))
+#   iso = int(str(tags['EXIF ISOSpeedRatings']))
+#   exp = iris**2/(time*iso)
+    exps.append(exp)
+    exp /= 2
 
-    for column in image:
-        for pixel in column:
-            for c in pixel:
-                # multiply the brighness of each pixel
-                # based on how close it is to clipping
-                c *= thing(c, clip, feather_stops)
-    image = ImageBuf(image)
-    image = oiio.ImageBufAlgo.div(image, exp)
-    composite = oiio.ImageBufAlgo.add(composite, image)
+    image = oiio.ImageBuf(file)
 
-images.sort(key=lambda image: image[0])
-base_exp = images[0][0]
+    mask = thing(image, clip, feather_stops)
+    image = mul(image, exp)
+    image.write("2"+file)
 
-composite = oiio.ImageBufAlgo.mul(composite, base_exp*2**10) # temp add 10 stops for debug
+    composite = oiio_lerp(mask, composite, image)
+    
+
+exps.sort(reverse=True)
+high_exp = exps[0]
+
+#composite = oiio.ImageBufAlgo.div(composite, high_exp)
 composite.write('gamer.exr')
 
