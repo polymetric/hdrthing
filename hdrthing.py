@@ -49,7 +49,7 @@ for file in files:
 
     top = load(file)
     # ABSEV = absolute exposure value
-    print(f'loaded {file} with ABSEV {math.log(exp,2):.0f}')
+    print(f'loaded {file} with ABSEV {round(math.log(exp,2))}')
 
     if emptycomp:
         top /= exp
