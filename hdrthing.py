@@ -45,43 +45,43 @@ lastexp = None
 
 exps = []
 i = 0
-exp = 1
 
 for file in files:
     i += 1
-#   img_exif = open(file, 'rb')
-#   tags = exifread.process_file(img_exif)
-#   time = float(Fraction(str(tags['EXIF ExposureTime'])))
-#   iris = float(Fraction(str(tags['EXIF FNumber'])))
-#   iso = int(str(tags['EXIF ISOSpeedRatings']))
-#   exp = iris**2/(time*iso)
-    exp /= 2
+    img_exif = open(file, 'rb')
+    tags = exifread.process_file(img_exif)
+    time = float(Fraction(str(tags['EXIF ExposureTime'])))
+    iris = float(Fraction(str(tags['EXIF FNumber'])))
+    iso = int(str(tags['EXIF ISOSpeedRatings']))
+    exp = iris**2/(time*iso)
     exps.append(exp)
 
     top = load(file)
-    top
     print(f'loaded {file} with EV {math.log(exp,2):.0f}')
 #   randwrite(top * exp, 'top')
 
     if emptycomp:
-        top /= exp
+        top *= exp
         composite = top
         emptycomp = False
     else:
         # always use the brighter image and then apply whatever is darker underneath
+        print(f'lastexp: {math.log(lastexp,2)}, exp: {math.log(exp,2)}')
         if lastexp > exp:
-            mask = thing(composite*lastexp, clip, feather_stops)
+            mask = thing(composite/lastexp, clip, feather_stops)
 #           randwrite(composite, 'comp')
 #           randwrite(composite/lastexp, 'comp/lastexp')
 #           randwrite(top, 'top')
 #           randwrite(mask, 'desc mask')
-            top /= exp
+            top *= exp
             composite = lerp(mask, composite, top)
         else:
             mask = thing(top, clip, feather_stops)
+#           randwrite(top, 'top')
+#           randwrite(top*exp, 'top*exp')
 #           randwrite(mask, 'asc mask')
-            top /= exp
-            composite = lerp(mask, top, composite)
+            top *= exp
+            composite = lerp(mask, composite, top)
     lastexp = exp
 
 #exps.sort(reverse=True)
