@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
 import OpenImageIO as oiio
 #import OpenEXR
 #from PIL import Image
 from os import listdir
+import os
 from os.path import isfile, join
+from sys import argv
 import re
 import exifread
 from fractions import Fraction
@@ -26,52 +29,73 @@ def load(file):
 def write(array, file):
     oiio.ImageBuf(array).write(file)
 
-inpath = '.'
-clip = 0.8
-feather_stops = 1
-absolute_exp = True
+root = os.path.realpath(os.path.curdir)
+result_count = 0
 
-files = [f for f in sorted(listdir(inpath)) if isfile(join(inpath, f)) and re.search('\.tiff$', f)]
-composite = None
-lastexp = None
-emptycomp = True
-
-exps = []
-
-for file in files:
-    img_exif = open(file, 'rb')
-    tags = exifread.process_file(img_exif)
-    time = float(Fraction(str(tags['EXIF ExposureTime'])))
-    iris = float(Fraction(str(tags['EXIF FNumber'])))
-    iso = int(str(tags['EXIF ISOSpeedRatings']))
-    exp = iris**-2*(time*iso)
-    exps.append(exp)
-
-    top = load(file)
-    # ABSEV = absolute exposure value
-    print(f'loaded {file} with ABSEV {round(math.log(exp,2))}')
-
-    if emptycomp:
-        top /= exp
-        composite = top
-        emptycomp = False
-    else:
-        # always use the brighter image and then apply whatever is darker underneath
-        if lastexp > exp:
-            # we divide composite by lastexp to place it at wherever
-            mask = thing(composite*lastexp, clip, feather_stops)
-            top /= exp
-            composite = lerp(mask, composite, top)
-        else:
-            mask = thing(top, clip, feather_stops)
-            top /= exp
-            composite = lerp(mask, composite, top)
-    lastexp = exp
-
-if not absolute_exp:
-    exps.sort(reverse=True)
-    high_exp = exps[0]
-    composite /= high_exp
-
-write(composite, 'gamer.exr')
+for inpath in argv[1:]:
+    try:
+        #inpath = '.'
+        print(f'processing dir {inpath}')
+        os.chdir(root)
+        os.chdir(inpath)
+        clip = 0.8
+        feather_stops = 1
+        absolute_exp = True
+        
+        files = [f for f in sorted(listdir('.')) if isfile(f) and re.search('\.tiff$', f)]
+        if len(files) < 1:
+            print('empty')
+            continue
+        composite = None
+        lastexp = None
+        emptycomp = True
+        
+        exps = []
+        
+        for file in files:
+            img_exif = open(file, 'rb')
+            tags = exifread.process_file(img_exif)
+            time = float(Fraction(str(tags['EXIF ExposureTime'])))
+            iris = float(Fraction(str(tags['EXIF FNumber'])))
+            iso = int(str(tags['EXIF ISOSpeedRatings']))
+            exp = iris**-2*(time*iso)
+            exps.append(exp)
+        
+            top = load(file)
+            # ABSEV = absolute exposure value
+            print(f'loaded {file} with ABSEV {round(math.log(exp,2))}')
+        
+            if emptycomp:
+                # dividing by a value proportional to the camera's exposure settings places each image
+                # where it should be relative to the others
+                top /= exp
+                composite = top
+                emptycomp = False
+            else:
+                # always use the brighter image and then apply whatever is darker underneath
+                if lastexp > exp:
+                    # we divide composite by lastexp to place it at wherever
+                    # it was exposed at, effectively undoing our previous division by the exposure value
+                    mask = thing(composite*lastexp, clip, feather_stops)
+                    top /= exp
+                    composite = lerp(mask, composite, top)
+                else:
+                    mask = thing(top, clip, feather_stops)
+                    top /= exp
+                    composite = lerp(mask, composite, top)
+            lastexp = exp
+        
+        if not absolute_exp:
+            exps.sort(reverse=True)
+            high_exp = exps[0]
+            composite /= high_exp
+        
+        os.chdir(root)
+        print(f'saving as result{result_count}.exr')
+        write(composite, f'result{result_count}.exr')
+        result_count += 1
+        print(f'finished dir {inpath}')
+    except KeyError as e:
+        print(f"file doesn't have exif data!")
+        continue
 
