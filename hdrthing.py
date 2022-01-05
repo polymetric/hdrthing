@@ -26,28 +26,17 @@ def load(file):
 def write(array, file):
     oiio.ImageBuf(array).write(file)
 
-def randwrite(a: oiio.ImageBuf, op: str):
-    global t
-    write(a, f'{t}.exr')
-    print(f'{t}: {op}')
-    t = t + 1
-
-t=0
-
 inpath = '.'
 clip = 0.8
 feather_stops = 1
 
 files = [f for f in sorted(listdir(inpath)) if isfile(join(inpath, f)) and re.search('\.tiff$', f)]
 composite = None
-emptycomp = True
 lastexp = None
 
 exps = []
-i = 0
 
 for file in files:
-    i += 1
     img_exif = open(file, 'rb')
     tags = exifread.process_file(img_exif)
     time = float(Fraction(str(tags['EXIF ExposureTime'])))
@@ -58,35 +47,27 @@ for file in files:
 
     top = load(file)
     print(f'loaded {file} with EV {math.log(exp,2):.0f}')
-#   randwrite(top * exp, 'top')
 
-    if emptycomp:
+    if composite == None:
         top *= exp
         composite = top
-        emptycomp = False
     else:
         # always use the brighter image and then apply whatever is darker underneath
         print(f'lastexp: {math.log(lastexp,2)}, exp: {math.log(exp,2)}')
         if lastexp > exp:
+            # we divide composite by lastexp to place it at wherever
             mask = thing(composite/lastexp, clip, feather_stops)
-#           randwrite(composite, 'comp')
-#           randwrite(composite/lastexp, 'comp/lastexp')
-#           randwrite(top, 'top')
-#           randwrite(mask, 'desc mask')
             top *= exp
             composite = lerp(mask, composite, top)
         else:
             mask = thing(top, clip, feather_stops)
-#           randwrite(top, 'top')
-#           randwrite(top*exp, 'top*exp')
-#           randwrite(mask, 'asc mask')
             top *= exp
             composite = lerp(mask, composite, top)
     lastexp = exp
 
-#exps.sort(reverse=True)
-#high_exp = exps[0]
+exps.sort(reverse=True)
+high_exp = exps[0]
 
-#composite = oiio.ImageBufAlgo.div(composite, high_exp)
+composite /= high_exp
 write(composite, 'gamer.exr')
 
