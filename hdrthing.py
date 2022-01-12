@@ -50,7 +50,7 @@ for inpath in argv[1:]:
         lastexp = None
         emptycomp = True
         
-        exps = []
+        images = []
         
         for file in files:
             img_exif = open(file, 'rb')
@@ -59,8 +59,12 @@ for inpath in argv[1:]:
             iris = float(Fraction(str(tags['EXIF FNumber'])))
             iso = int(str(tags['EXIF ISOSpeedRatings']))
             exp = iris**-2*(time*iso)
-            exps.append(exp)
-        
+            images.append((file, exp))
+
+        # sort by exposure descending
+        images.sort(key=lambda image: image[1], reverse=True)
+
+        for file, exp in images:
             top = load(file)
             # ABSEV = absolute exposure value
             print(f'loaded {file} with ABSEV {round(math.log(exp,2))}')
@@ -80,14 +84,14 @@ for inpath in argv[1:]:
                     top /= exp
                     composite = lerp(mask, composite, top)
                 else:
+                    # this should not happen
                     mask = thing(top, clip, feather_stops)
                     top /= exp
                     composite = lerp(mask, composite, top)
             lastexp = exp
         
         if not absolute_exp:
-            exps.sort(reverse=True)
-            high_exp = exps[0]
+            high_exp = images[0][1] # exposure of first (brighest image)
             composite /= high_exp
         
         os.chdir(root)
